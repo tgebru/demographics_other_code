@@ -1,7 +1,5 @@
+import logging
 import glob, re
-import pandas as pd
-import numpy as np
-from numpy import nan
 import urllib
 import json
 from BeautifulSoup import BeautifulStoneSoup
@@ -14,16 +12,17 @@ sys.path.append('/imagenetdb/jiadeng/crawler_demo')
 import network
 import time
 import pickle
+import json
 
 #need for Download URL module from Jia
 #browser_id=15
 browser_id=12
+logging.basicConfig(filename='log.log',level=logging.DEBUG)
 
 class ThreadURL(threading.Thread):
-  def __init__(self, queue,out_queue):
+  def __init__(self, queue):
     threading.Thread.__init__(self)
     self.queue = queue
-    self.out_queue = out_queue
     db=connect_to_db('demo')
     cursor=db.cursor()
     self.cursor = cursor
@@ -34,20 +33,18 @@ class ThreadURL(threading.Thread):
     while True:
       query = self.queue.get()
       print "running: %s" %(self.name)
-      fips=get_fips(query,self.b,self.cursor)
-      if fips:
-        self.out_queue.put(fips)
-      else:
-        self.queue.put(query)
+      city_zip=get_city_zip(query,self.b,self.cursor)
 
+      if city_zip==1:
+        logging.debug(query)
+        logging.debug('\n')
+       
       if queue.empty():
          queue.task_done()
-         out_queue.task_done()
          print "done: %s" %self.name
          break 
       else:
          queue.task_done()
-         out_queue.task_done()
 
 def get_lat_longs(cursor):
   try:
@@ -56,7 +53,7 @@ def get_lat_longs(cursor):
       latlongs=pickle.load(f)
   except IOError:
     print 'getting latlongs from table.... '
-    sql_s=' select lat,lng from geo.samples where sampled=1 and good_gps=1 order by lat,lng'
+    sql_s=' select lat,lng from demo.latlong_fpis where city is null'
     cursor.execute(sql_s)
     latlongs= cursor.fetchall()
     with open('lat_longs.p','wb') as f:
@@ -64,28 +61,36 @@ def get_lat_longs(cursor):
 
   return latlongs
 
-def store_fips(fp_code,cursor):
-  cursor.execute('insert ignore into demo.latlong_fpis (lat,lng,fpis) values(%s,%s,%s)',(fp_code[0],fp_code[1],fp_code[2]))  
+def store_city_zip(lat,lng,city,zipcode,cursor):
+  cursor.execute('update demo.latlong_fpis set city=%s,zipcode=%s where lat=%s and lng=%s',(city,zipcode,lat,lng))
 
-def get_fips(tup,br,cursor):
-  url = "http://data.fcc.gov/api/block/2010/find?latitude=40.0&longitude=-85"
-  latitude = "latitude=" + str(tup[0])
-  longitude = "&longitude=" + str(tup[1])
-  url = url_base + latitude + longitude
+def get_city_zip(tup,br,cursor):
+  latlong = '%s,%s'%(str(tup[0]),str(tup[1]))
+  url = url_base + latlong + "&sensor=true"
   data=follow_link(br,url)
-  #urlobj = urllib.urlopen(url)
-  #data = urlobj.read()
   if data is None:
-     return 
+     return 1
   soup = BeautifulStoneSoup(data)
-  blck = dict(soup.find("block").attrs)
-  if 'fips' in blck:
-    fips = str(blck['fips'])
-  else:
-    fips='null'
-  #print '%s %s %s'%(latitude,longitude,fips)
-  store_fips((tup[0],tup[1],fips),cursor)
-  return (tup[0],tup[1],fips)
+  newDict=json.loads(str(soup))
+  try:
+    results= newDict['results'][0]
+    city_assigned=False
+    zip_assigned=False
+    for r in results['address_components']:
+      if 'locality' in r['types']:
+        city= r['long_name']
+        city_assigned=True
+      if 'postal_code' in r['types']:
+        zipcode=r['long_name']
+        zip_assigned=True
+      if city_assigned and zip_assigned: break
+    
+    store_city_zip(tup[0],tup[1],city,zipcode,cursor)
+  except:
+    print 'Cannot get %s'%latlong
+    print data
+    return 1 
+  return 0
 
 def follow_link(br,link):
    print '......link=%s..................'%link
@@ -107,15 +112,14 @@ def follow_link(br,link):
 
 if __name__=="__main__":
   #Load latitude and longitudes
-  db=connect_to_db('backup_geocars')
+  db=connect_to_db('')
   cursor=db.cursor()
   lat_longs=get_lat_longs(cursor)
-  url_base = "http://data.fcc.gov/api/block/2010/find?"
+  url_base = "http://maps.googleapis.com/maps/api/geocode/json?latlng="
   queue = Queue.Queue()
-  out_queue = Queue.Queue()
-  num_threads=1000
+  num_threads=100
 
-  #Pull fips codes for all lat/longs
+  #Pull zip codes and city names for all lat/longs
   num_tuples=len(lat_longs)
   count = 0
   for tup in lat_longs:
@@ -125,17 +129,10 @@ if __name__=="__main__":
 
   start= time.time()
   for i in range(num_threads):
-    thread = ThreadURL(queue,out_queue)
+    thread = ThreadURL(queue)
     thread.start()
   queue.join()
-  out_queue.join()
 
   stop = time.time()
-
-  while True:
-    print(out_queue.get())
-    if out_queue.empty():
-      break
   print 'took %d seconds' %(stop-start)
   db.close
-  db1.close
