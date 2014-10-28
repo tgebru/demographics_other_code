@@ -1,0 +1,51 @@
+load('bboxstats.mat');
+clf;
+
+wrange = [0,1000];
+hrange = [0,600];
+arange = [0,3e5];
+larange = [7,14];
+arrange = [0,6];
+
+subplot(2,5,1);
+hist(gsv_bboxes(:, 1), linspace(wrange(1), wrange(2), 50));
+xlim(wrange);
+title('gsv width');
+subplot(2,5,2);
+hist(gsv_bboxes(:, 2), linspace(hrange(1), hrange(2), 50));
+xlim(hrange);
+title('gsv height');
+subplot(2,5,3);
+hist(gsv_bboxes(:, 3), linspace(arange(1), arange(2), 50));
+xlim(arange);
+title('gsv area');
+subplot(2,5,4);
+hist(gsv_bboxes(:, 4), linspace(larange(1), larange(2), 50));
+xlim(larange);
+title('gsv log(area)');
+subplot(2,5,5);
+hist(gsv_bboxes(:, 5), linspace(arrange(1), arrange(2), 50));
+xlim(arrange);
+title('gsv ar');
+
+
+subplot(2,5,6);
+hist(web_bboxes(:, 1), linspace(wrange(1), wrange(2), 50));
+xlim(wrange);
+title('web width');
+subplot(2,5,7);
+hist(web_bboxes(:, 2), linspace(hrange(1), hrange(2), 50));
+xlim(hrange);
+title('web height');
+subplot(2,5,8);
+hist(web_bboxes(:, 3), linspace(arange(1), arange(2), 50));
+xlim(arange);
+title('web area');
+subplot(2,5,9);
+hist(web_bboxes(:, 4), linspace(larange(1), larange(2), 50));
+xlim(larange);
+title('web log(area)');
+subplot(2,5,10);
+hist(web_bboxes(:, 5), linspace(arrange(1), arrange(2), 50));
+xlim(arrange);
+title('web ar');

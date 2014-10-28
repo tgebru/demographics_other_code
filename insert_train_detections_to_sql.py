@@ -54,7 +54,6 @@ if __name__=='__main__':
   MAXSIZE=10000000
   CHUNKSIZE=10000
   SLEEP=10
-  STATEMENT='insert ignore into gt_train_detected_cars (im_name,warped,year,x1,y1,x2,y2,dpm_random,desc_val,p1,p2) values'
   limit_resource()
   start_time=time.time()
   logging.basicConfig(filename='log.log',level=logging.DEBUG)
@@ -67,42 +66,23 @@ if __name__=='__main__':
 
   num_detections=0
   #Read sql lines printed from matlab
-  for i in range(1,NUMCITIES+1):
-    print 'reading ciy # %d'%i
-    queries=open('all_detected_cars_data_%d.txt'%i).readlines()
-    l=len(queries)
-    num_detections += l
-    logging.debug('city %d has %d detections'%(i,l))
-    logging.debug('%d total detections so far'%num_detections)
+  queries=open('train_gt_cars_data.txt').readlines()
+  l=len(queries)
+  num_detections += l
 
-    #for group in chunker(queries,CHUNKSIZE):
-    for q in queries:
-      try:
-        queue.put(q.strip(),block=False)
-        #queue.put((STATEMENT,group),block=False)
-      except Queue.Full:
-        print 'Queue full sleeping for %d seconds'%SLEEP
-        logging.debug('Queue full...')
-        time.sleep(SLEEP)
-        print 'waking up...'
+  #for group in chunker(queries,CHUNKSIZE):
+  for q in queries:
+    try:
+      queue.put(q.strip(),block=False)
+      #queue.put((STATEMENT,group),block=False)
+    except Queue.Full:
+      print 'Queue full sleeping for %d seconds'%SLEEP
+      logging.debug('Queue full...')
+      time.sleep(SLEEP)
+      print 'waking up...'
   queue.join()
   t= time.time-start_time
   print t
   logging.debug('putting to sql took %d seconds'%t)
-
-  #Put latitude longitude in table
-  print 'putting in lattitudes and longitudes'
-  db=connect_to_db('all_cars')
-  cursor=db.cursor()
-  sql_s='update detected_cars m,geo.lat_lng_image g set m.lat=g.lat,m.lng=g.lng where m.im_name=g.im_fname'  
-  print sql_s
-  cursor.execute(sql_s)
-
-  sql_s='select count(*) from detected_cars'
-  cursor.execute(sql_s) 
-  num_in_sql=cursor.fetchone()
-  logging.debug('Final number of detections: %d',num_detections) 
-  logging.debug('Final number in sql: %d',num_in_sql[0])
-  db.close()
 
 

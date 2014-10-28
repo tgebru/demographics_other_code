@@ -8,9 +8,18 @@ import Queue
 import threading
 import time
 
+LEVEL='zipcode'
+DATA_TYPE='acs'
+
+if DATA_TYPE=='census':
+  URL_BASE='http://api.census.gov/data/2010/sf1?key='
+else:
+  if LEVEL=='zipcode':
+    URL_BASE='http://api.census.gov/data/2012/acs5?key='
+  else:
+    URL_BASE='http://api.census.gov/data/2010/acs5?key='
+
 API_KEY='c3f2b964f8b400372d5b511a32860df212775373'
-#URL_BASE='http://api.census.gov/data/2010/sf1?key='
-URL_BASE='http://api.census.gov/data/2010/acs5?key='
 BASE='%s%s&get='%(URL_BASE,API_KEY)
 BROWSER_ID=12
 
@@ -40,34 +49,46 @@ class ThreadURL(threading.Thread):
          queue.task_done()
 
 def make_cols(cursor,input):
+  input=input.split(',')
+  print input
   for d in input:
-    sqls='show columns from demo.tract_acs like "%s"'%d
+    d=d.replace(' ','_')
+    sqls='show columns from demo.%s_%s like "%s"'%(LEVEL,DATA_TYPE,d)
     cursor.execute(sqls)
     ans=cursor.fetchall()
     if not ans:
-      sqls='alter table demo.tract_acs add column %s integer(6)'%d
+      sqls='alter table demo.%s_%s add column %s integer(6)'%(LEVEL,DATA_TYPE,d)
       cursor.execute(sqls)
 
 def store_in_db(fips,data,vars_list,cursor):
-  try:
-    dict=eval(data)
-    keys=",".join(dict[0])
-    make_cols(cursor,dict[0])
-    for d in dict[1:]:
-      d_str=",".join(d)
-      sql_s='insert ignore into demo.tract_acs (fips,%s) values(%s,%s)'%(keys,fips.strip(),d_str)
-    print sql_s
-    cursor.execute(sql_s)
-  except:
-    sys.stderr.write('%s\n'%fips) 
+    try:
+      print 'instore'
+      data=data.replace("[[","")
+      data=data.replace("]]","")
+      keys=data.split(']')[0]
+      values=data.split(']')[1]
+      values=values.replace('[','')
+      keys=keys.replace('"','').replace(' ','_').strip().replace('\n','')
+      values=values.replace('"','').strip().replace('\n','')
+      make_cols(cursor,keys)
+      sql_s='insert ignore into demo.%s_%s (fips,%s) values(%s%s)'%(LEVEL,DATA_TYPE,keys,fips.strip(),values)
+      print sql_s
+      cursor.execute(sql_s)
+    except:
+      sys.stderr.write('%s\n'%fips) 
      
 def get_vars_list():
-  vars=open('acs_variables.txt').readlines()
-  #vars=open('acs_variables.txt').readlines()
+  vars=open('%s_variables.txt'%DATA_TYPE).readlines()
   var_keys=[]
   for v in vars:
     var_keys.append(v.split(',')[0])
   return var_keys
+
+def get_zipcode(state,county,tract,cursor):
+  sqls='select zcta5 from demo.zcta_tract where state=%s and county=%s and tract=%s'%(state,county,tract)
+  cursor.execute(sqls)
+  zcta5=cursor.fetchone()
+  return zcta5[0]
 
 def get_info(fips,br,cursor):
   if len(str(fips))==14:
@@ -77,27 +98,35 @@ def get_info(fips,br,cursor):
   county= fips[2:5]
   tract = fips[5:11]
   block = fips[11:15]
-  #vars='PCT012A015,PCT012A119'
-  #vars_list=['P0030001']
   vars_list=get_vars_list()
   vars=",".join(vars_list)
 
-  #query='%s%s&for=block:%s&in=state:%s+county:%s+tract:%s'%(BASE,vars,block,state,county,tract)
-  query='%s%s&for=tract:%s&in=state:%s+county:%s'%(BASE,vars,tract,state,county)
+  if LEVEL=='block':
+    query='%s%s&for=block:%s&in=state:%s+county:%s+tract:%s'%(BASE,vars,block,state,county,tract)
+  elif LEVEL=='tract':
+    query='%s%s&for=tract:%s&in=state:%s+county:%s'%(BASE,vars,tract,state,county)
+  elif LEVEL=='zipcode':
+    zipcode=get_zipcode(state,county,tract,cursor)
+    #query='%s%s&for=zip+code+tabulation+area:%s&in=state:%s'%(BASE,vars,zipcode,state)
+    query='%s%s&for=zip+code+tabulation+area:%s'%(BASE,vars,zipcode)
+
   print query
   data=follow_link(br,query)
   if data is None:
     return 1
+  print data
   store_in_db(fips,data,vars_list,cursor)
   return 0
 
 def get_fips(cursor,table_name):
   print 'Getting FIPS'
-  sqls ='select im_name from all_cars.gt_val_detected_cars'
+  sqls ='select im_name from all_cars.%s'%table_name
   cursor.execute(sqls)
   ims=cursor.fetchall()
   fips=[]
+  i=0
   for im in ims:
+    i += 1
     im_parts=im[0].split('_')
     lat=im_parts[1]
     lng=im_parts[2]
@@ -108,11 +137,25 @@ def get_fips(cursor,table_name):
     fips.append(res[0])
   return fips
 
+def get_unstored_fips(cursor):
+  fips=[]
+  lat_lngs=open('stderr.log').readlines()
+  i=0
+  for l in lat_lngs:
+    i += 1
+    sqls='select fpis from demo.latlong_fpis where lat=%s and lng=%s'%(l.split(',')[0],l.split(',')[1].split(' ')[0].strip())
+    cursor.execute(sqls)
+    res=cursor.fetchone()
+    fips.append(res[0])
+    print res[0]
+  return fips
+    
 if __name__=="__main__":
   db=connect_to_db('all_cars')
   cursor=db.cursor()
-  val_table_name='gt_val_detected_cars';
-  fips=get_fips(cursor,val_table_name)
+  table_name='train_val_gt_detected_cars';
+  #fips=get_fips(cursor,table_name)
+  fips=get_unstored_fips(cursor)
   queue = Queue.Queue()
   NUM_THREADS=100
   i=0
